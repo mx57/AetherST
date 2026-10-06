@@ -530,6 +530,10 @@ class AetherProcessRunner(private val context: Context) {
             }
         }
 
+        if (lower.contains("registration: error sending request") || lower.contains("api.cloudflareclient.com")) {
+            LogRepository.w("[AetherCore] Registration API blocked or unreachable: $line", "AetherCore")
+        }
+
         if (isZeroTrustCodePrompt(lower)) {
             onCodeRequired()
             return
