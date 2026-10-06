@@ -163,7 +163,7 @@ class AetherConfigRepository private constructor(private val settings: Settings)
             hevMapdnsCacheSize = settings.getInt("${prefix}hev_mapdns_cache_size", 10000),
             hevUdpMode = sanitizeHevUdpMode(settings.getString("${prefix}hev_udp_mode", "udp")),
             cloakEnabled = settings.getBoolean("${prefix}cloak_enabled", false),
-            cloakSniList = settings.getString("${prefix}cloak_sni_list", "www.hcaptcha.com,www.speedtest.net,www.bing.com"),
+            cloakSniList = settings.getString("${prefix}cloak_sni_list", "avito.ru,yandex.ru,vk.com,ozon.ru,gosuslugi.ru,www.bing.com,www.speedtest.net,www.hcaptcha.com"),
             cloakTtlList = settings.getString("${prefix}cloak_ttl_list", "4,5,6,8"),
             cloakJitterMin = settings.getInt("${prefix}cloak_jitter_min", 20),
             cloakJitterMax = settings.getInt("${prefix}cloak_jitter_max", 80),

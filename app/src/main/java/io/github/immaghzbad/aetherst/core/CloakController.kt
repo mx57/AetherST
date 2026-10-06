@@ -29,7 +29,7 @@ object CloakController {
         val logFile = File(dir, "cloak.log")
         val port = findFreePort()
         cloakPort = port
-        val sni = config.cloakSniList.ifEmpty { "www.hcaptcha.com,www.speedtest.net,www.bing.com" }
+        val sni = config.cloakSniList.ifEmpty { "avito.ru,yandex.ru,vk.com,ozon.ru,gosuslugi.ru,www.bing.com,www.speedtest.net,www.hcaptcha.com" }
         val ttl = config.cloakTtlList.ifEmpty { "4,5,6,8" }
         val fallback = config.cloakFallbackPorts.ifEmpty { "443,2053,2083,2087,2096,8443" }
         val connectList = buildConnectList(context, config)
