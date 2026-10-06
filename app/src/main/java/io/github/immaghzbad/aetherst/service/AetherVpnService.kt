@@ -498,86 +498,103 @@ class AetherVpnService : VpnService() {
         val cfgForMtu = AetherConfigRepository.getInstance(getSettings(PlatformContext(this))).config.value
         val effectiveMtu = cfgForMtu.mtu.coerceIn(576, 9000)
         val pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        val builder = Builder()
-            .addAddress("198.18.0.1", 24)
-            .addAddress("fd00::1", 120)
-            .addRoute("0.0.0.0", 0)
-            .setMtu(effectiveMtu)
-            .setSession("AetherST Tunnel")
-            .setConfigureIntent(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), pendingFlags))
 
-        if (engine == TunnelEngine.HEV_TUN2SOCKS) {
-            builder.addDnsServer(HevTun2SocksConfig.MAP_DNS_ADDRESS)
-        } else {
-            builder.addDnsServer("1.1.1.1")
-            builder.addDnsServer("8.8.8.8")
-            builder.addDnsServer("2606:4700:4700::1111")
-            builder.addDnsServer("2001:4860:4860::8888")
-        }
+        fun tryCreateInterface(includeIpv6: Boolean): ParcelFileDescriptor? {
+            val builder = Builder()
+                .addAddress("198.18.0.1", 24)
+                .addRoute("0.0.0.0", 0)
+                .setMtu(effectiveMtu)
+                .setSession("AetherST Tunnel")
+                .setConfigureIntent(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), pendingFlags))
 
-        val config = AetherConfigRepository.getInstance(getSettings(PlatformContext(this))).config.value
-        if (config.ipv6Leak && Build.VERSION.SDK_INT > Build.VERSION_CODES.O_MR1) {
-            runCatching { builder.addRoute("::", 0) }
-        }
-
-        if (config.tunnelAllApps) {
-            try {
-                builder.addDisallowedApplication(packageName)
-            } catch (e: Exception) {
-                LogRepository.w("[Tun] Failed to disallow self: ${e.message}")
+            if (includeIpv6) {
+                runCatching { builder.addAddress("fd00::1", 120) }
             }
-            LogRepository.i("[Tun] Whole-device: tunneling all apps, split lists ignored")
-        } else {
-            if (config.tunneledPackages.isNotEmpty()) {
-                var added = 0
-                (config.tunneledPackages + config.blockedPackages)
-                    .asSequence()
-                    .filterNot { it == packageName }
-                    .forEach { pkg ->
-                        try {
-                            builder.addAllowedApplication(pkg)
-                            added++
-                        } catch (_: PackageManager.NameNotFoundException) {
-                            LogRepository.w("[Tun] Ignoring uninstalled package: $pkg")
-                        } catch (e: Exception) {
-                            LogRepository.w("[Tun] Skipping package $pkg: ${e.message}")
-                        }
-                    }
-                LogRepository.i("[Tun] Bypass-default: $added apps tunneled, rest bypass (allowed mode)")
+
+            if (engine == TunnelEngine.HEV_TUN2SOCKS) {
+                builder.addDnsServer(HevTun2SocksConfig.MAP_DNS_ADDRESS)
             } else {
+                builder.addDnsServer("1.1.1.1")
+                builder.addDnsServer("8.8.8.8")
+                if (includeIpv6) {
+                    runCatching {
+                        builder.addDnsServer("2606:4700:4700::1111")
+                        builder.addDnsServer("2001:4860:4860::8888")
+                    }
+                }
+            }
+
+            val config = AetherConfigRepository.getInstance(getSettings(PlatformContext(this))).config.value
+            if (includeIpv6 && config.ipv6Leak && Build.VERSION.SDK_INT > Build.VERSION_CODES.O_MR1) {
+                runCatching { builder.addRoute("::", 0) }
+            }
+
+            if (config.tunnelAllApps) {
                 try {
                     builder.addDisallowedApplication(packageName)
                 } catch (e: Exception) {
                     LogRepository.w("[Tun] Failed to disallow self: ${e.message}")
                 }
-                try {
-                    val pm = packageManager
-                    val allPkgs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        pm.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(PackageManager.GET_META_DATA.toLong()))
-                    } else {
-                        @Suppress("DEPRECATION") pm.getInstalledApplications(PackageManager.GET_META_DATA)
-                    }
-                    var disallowed = 0
-                    for (app in allPkgs) {
-                        val pkg = app.packageName
-                        if (pkg == packageName) continue
-                        if (config.blockedPackages.contains(pkg)) continue
-                        try {
-                            builder.addDisallowedApplication(pkg)
-                            disallowed++
-                        } catch (_: PackageManager.NameNotFoundException) {
-                        } catch (e: Exception) {
-                            LogRepository.w("[Tun] Skipping disallow $pkg: ${e.message}")
+                LogRepository.i("[Tun] Whole-device: tunneling all apps, split lists ignored")
+            } else {
+                if (config.tunneledPackages.isNotEmpty()) {
+                    var added = 0
+                    (config.tunneledPackages + config.blockedPackages)
+                        .asSequence()
+                        .filterNot { it == packageName }
+                        .forEach { pkg ->
+                            try {
+                                builder.addAllowedApplication(pkg)
+                                added++
+                            } catch (_: PackageManager.NameNotFoundException) {
+                                LogRepository.w("[Tun] Ignoring uninstalled package: $pkg")
+                            } catch (e: Exception) {
+                                LogRepository.w("[Tun] Skipping package $pkg: ${e.message}")
+                            }
                         }
+                    LogRepository.i("[Tun] Bypass-default: $added apps tunneled, rest bypass (allowed mode)")
+                } else {
+                    try {
+                        builder.addDisallowedApplication(packageName)
+                    } catch (e: Exception) {
+                        LogRepository.w("[Tun] Failed to disallow self: ${e.message}")
                     }
-                    LogRepository.i("[Tun] Bypass-default: 0 tunneled, $disallowed apps bypassed (all bypass)")
-                } catch (e: Exception) {
-                    LogRepository.w("[Tun] Failed to enumerate apps for all-bypass: ${e.message}")
+                    try {
+                        val pm = packageManager
+                        val allPkgs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            pm.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(PackageManager.GET_META_DATA.toLong()))
+                        } else {
+                            @Suppress("DEPRECATION") pm.getInstalledApplications(PackageManager.GET_META_DATA)
+                        }
+                        var disallowed = 0
+                        for (app in allPkgs) {
+                            val pkg = app.packageName
+                            if (pkg == packageName) continue
+                            if (config.blockedPackages.contains(pkg)) continue
+                            try {
+                                builder.addDisallowedApplication(pkg)
+                                disallowed++
+                            } catch (_: PackageManager.NameNotFoundException) {
+                            } catch (e: Exception) {
+                                LogRepository.w("[Tun] Skipping disallow $pkg: ${e.message}")
+                            }
+                        }
+                        LogRepository.i("[Tun] Bypass-default: 0 tunneled, $disallowed apps bypassed (all bypass)")
+                    } catch (e: Exception) {
+                        LogRepository.w("[Tun] Failed to enumerate apps for all-bypass: ${e.message}")
+                    }
                 }
             }
+            return builder.establish()
         }
 
-        vpnInterface = builder.establish()
+        var pfd = runCatching { tryCreateInterface(includeIpv6 = true) }.getOrNull()
+        if (pfd == null) {
+            LogRepository.w("[Tun] [attempt=$attemptId] IPv6 TUN creation failed/unsupported, falling back to IPv4-only...")
+            pfd = runCatching { tryCreateInterface(includeIpv6 = false) }.getOrNull()
+        }
+
+        vpnInterface = pfd
         if (vpnInterface == null) {
             val prep = VpnService.prepare(this@AetherVpnService)
             LogRepository.e("[Tun] [attempt=$attemptId] Failed: builder.establish() returned null mtu=$effectiveMtu engine=$engine prepare=${prep != null}")

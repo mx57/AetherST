@@ -215,7 +215,7 @@ data class AetherConfig(
     val hevMapdnsCacheSize: Int = 10000,
     val hevUdpMode: String = "udp",
     val cloakEnabled: Boolean = false,
-    val cloakSniList: String = "www.hcaptcha.com,www.speedtest.net,www.bing.com",
+    val cloakSniList: String = "avito.ru,yandex.ru,vk.com,ozon.ru,gosuslugi.ru,www.bing.com,www.speedtest.net,www.hcaptcha.com",
     val cloakTtlList: String = "4,5,6,8",
     val cloakJitterMin: Int = 20,
     val cloakJitterMax: Int = 80,
