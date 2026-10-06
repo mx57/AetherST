@@ -35,7 +35,23 @@ class AetherRegistrationRunner(private val context: Context) {
             runnerJob = scope.launch {
                 try {
                     onStatusUpdate(ProtocolTestStatus.PREPARING)
-                    val result = runProtocolBinary(protocol, config, attemptId, onStatusUpdate)
+                    var result = runProtocolBinary(protocol, config, attemptId, onStatusUpdate)
+                    if (result is RegistrationResult.Failed && (result.reason.contains("API registration failure") || result.reason.contains("Handshake incomplete")) && !config.upstreamProxyEnabled) {
+                        LogRepository.w("Direct registration failed/blocked; attempting proxy-assisted registration via Psiphon...")
+                        val psiphonCfg = config.copy(chainProvider = ChainProvider.PSIPHON, psiphonEnabled = true)
+                        PsiphonController.start(context, psiphonCfg, upstream = null)
+                        var waitCount = 0
+                        while (waitCount < 20 && !PsiphonController.isConnected()) {
+                            kotlinx.coroutines.delay(1000)
+                            waitCount++
+                        }
+                        if (PsiphonController.isConnected()) {
+                            val fallbackConfig = config.copy(upstreamProxyEnabled = true, upstreamProxy = PsiphonController.getUpstreamProxy())
+                            LogRepository.i("Retrying registration via Psiphon upstream (${fallbackConfig.upstreamProxy})...")
+                            result = runProtocolBinary(protocol, fallbackConfig, attemptId, onStatusUpdate)
+                        }
+                        PsiphonController.stop()
+                    }
                     if (currentAttemptId.get() == attemptId) {
                         onComplete(result)
                     }
@@ -144,7 +160,7 @@ class AetherRegistrationRunner(private val context: Context) {
                     if (lower.contains("fatal") || lower.contains("panic")) {
                         return RegistrationResult.Failed("Core fatal error")
                     }
-                    if (lower.contains("error: api")) {
+                    if (lower.contains("error: api") || lower.contains("registration: error sending request")) {
                         return RegistrationResult.Failed("API registration failure")
                     }
                     if (lower.contains("address already in use")) {
